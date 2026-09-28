@@ -98,7 +98,8 @@ export const healthData = async (req, res) => {
     );
 
     const mlResponse = await fetch(
-      "http://127.0.0.1:5001/predict",
+      // "http://127.0.0.1:5001/predict",
+      "https://healthtrackapp2ml.onrender.com/predict"
       {
         method: "POST",
 
