@@ -304,7 +304,7 @@ export default function TabsLayout() {
 
                   left: 14,
                   right: 14,
-                  bottom: 40,
+                  bottom: 20,
 
                   height: 64,
 
