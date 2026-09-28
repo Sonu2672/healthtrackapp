@@ -14,6 +14,8 @@
 //     riskScore: 12,
 //   };
 // };
+
+
 import { ESP32_URL } from "../constants/config";
 
 export const getESP32Data = async () => {
@@ -35,18 +37,12 @@ export const getESP32Data = async () => {
   );
 
   return {
-    // ==============================
     // DEVICE
-    // ==============================
-
     deviceId:
       data.deviceId ||
       "ESP32_HEALTH_01",
 
-    // ==============================
     // HEALTH DATA
-    // ==============================
-
     heartRate:
       Number(data.heartRate) || 0,
 
@@ -56,10 +52,7 @@ export const getESP32Data = async () => {
     temp:
       Number(data.temp) || 0,
 
-    // ==============================
     // ENVIRONMENT DATA
-    // ==============================
-
     envtemp:
       Number(data.envtemp) || 0,
 
@@ -69,28 +62,8 @@ export const getESP32Data = async () => {
     dust:
       Number(data.dust) || 0,
 
-    // ==============================
     // ECG
-    // ==============================
-
     ecg:
       Number(data.ecg) || 0,
-
-    // ==============================
-    // ESP32 ML RESULT
-    // ==============================
-
-    riskLevel:
-      data.riskLevel ||
-      data.mlStatus ||
-      data.status ||
-      "Unknown",
-
-    riskScore:
-      Number(
-        data.riskScore ||
-        data.mlConfidence ||
-        0
-      ),
   };
 };
