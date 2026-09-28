@@ -240,7 +240,7 @@ export default function Home() {
     const localInterval =
       setInterval(() => {
         fetchLocalESP32();
-      }, 2000);
+      }, 5000);
 
     // First request immediately
     fetchLocalESP32();
