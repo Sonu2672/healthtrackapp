@@ -1,0 +1,15 @@
+import express from 'express';
+import multer from 'multer';
+import { uploadDocument,getDocuments,analyzeMedicalReport} from '../controller/documentController.js';
+import {auth} from "../middlewares/userAuth.js"
+const Router = express.Router(); 
+// Multer memory storage setup
+
+const upload = multer({ storage: multer.memoryStorage() });
+
+// POST Route: /api/upload-document
+Router.post('/uploaddoc', upload.single('document'),auth, uploadDocument);
+Router.get('/getdoc',auth,getDocuments);
+Router.post('/analyzeai',analyzeMedicalReport)
+export default Router;
+

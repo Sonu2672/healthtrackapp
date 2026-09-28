@@ -1,0 +1,10 @@
+# Node modules
+node_modules/
+
+# Environment files
+.env
+.env.*
+
+# Forms folder (ONLY if you actually want to ignore the entire forms folder)
+forms/
+forms/Backend/.env
