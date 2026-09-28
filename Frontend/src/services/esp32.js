@@ -1,4 +1,4 @@
-import { ESP32_URL } from "../constants/config";
+// import { ESP32_URL } from "../constants/config";
 // export const getESP32Data = async () => {
 //   return {
 //     deviceId: "ESP32_HEALTH_01",
