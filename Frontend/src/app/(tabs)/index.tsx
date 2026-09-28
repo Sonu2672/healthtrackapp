@@ -7,6 +7,8 @@ import {
   View,
 } from "react-native";
 
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
 import {
   socket,
   connectSocket,
@@ -16,8 +18,16 @@ import { DEVICE_ID } from "../../constants/config";
 
 import { getESP32Data } from "../../services/esp32";
 
+// ==================================================
+// CACHE
+// ==================================================
+
+const HEALTH_CACHE_KEY =
+  "healthtrack_last_health_data";
+
 export default function Home() {
-  const [connected, setConnected] = useState(false);
+  const [connected, setConnected] =
+    useState(false);
 
   // Last time Socket.IO received data
   const lastSocketData = useRef(0);
@@ -33,11 +43,115 @@ export default function Home() {
   });
 
   // ==================================================
-  // SOCKET.IO + LOCAL ESP32
+  // SOCKET.IO + LOCAL ESP32 + CACHE
   // ==================================================
 
   useEffect(() => {
     let mounted = true;
+
+    // ==================================================
+    // LOAD LAST KNOWN DATA
+    // ==================================================
+
+    const loadCachedHealth = async () => {
+      try {
+        const cached =
+          await AsyncStorage.getItem(
+            HEALTH_CACHE_KEY
+          );
+
+        if (!cached) {
+          console.log(
+            "ℹ️ NO CACHED HEALTH DATA"
+          );
+          return;
+        }
+
+        const data = JSON.parse(cached);
+
+        console.log(
+          "💾 LAST KNOWN HEALTH DATA:",
+          data
+        );
+
+        if (!mounted) return;
+
+        setHealth((prev) => ({
+          ...prev,
+
+          heartRate:
+            Number(data.heartRate) || 0,
+
+          spo2:
+            Number(data.spo2) || 0,
+
+          temp:
+            Number(data.temp) || 0,
+
+          riskLevel:
+            data.riskLevel ||
+            prev.riskLevel,
+
+          riskScore:
+            Number(data.riskScore) ||
+            prev.riskScore,
+        }));
+      } catch (error) {
+        console.log(
+          "❌ CACHE LOAD ERROR:",
+          error
+        );
+      }
+    };
+
+    // ==================================================
+    // SAVE HEALTH DATA
+    // ==================================================
+
+    const saveHealthCache = async (
+      data: any
+    ) => {
+      try {
+        await AsyncStorage.setItem(
+          HEALTH_CACHE_KEY,
+          JSON.stringify({
+            heartRate:
+              Number(data.heartRate) || 0,
+
+            spo2:
+              Number(data.spo2) || 0,
+
+            temp:
+              Number(data.temp) || 0,
+
+            riskLevel:
+              data.riskLevel ||
+              data.mlStatus ||
+              data.status ||
+              "Normal",
+
+            riskScore:
+              Number(
+                data.riskScore ||
+                data.mlConfidence ||
+                0
+              ),
+
+            savedAt:
+              Date.now(),
+          })
+        );
+
+        console.log(
+          "💾 HEALTH DATA CACHED"
+        );
+      } catch (error) {
+        console.log(
+          "❌ CACHE SAVE ERROR:",
+          error
+        );
+      }
+    };
 
     // ==================================================
     // SOCKET CONNECT
@@ -78,7 +192,9 @@ export default function Home() {
     // ONLINE SOCKET HEALTH DATA
     // ==================================================
 
-    const handleHealthData = (data: any) => {
+    const handleHealthData = (
+      data: any
+    ) => {
       console.log(
         "❤️ ONLINE HEALTH DATA:",
         data
@@ -90,9 +206,7 @@ export default function Home() {
 
       if (!mounted) return;
 
-      setHealth((prev) => ({
-        ...prev,
-
+      const onlineHealth = {
         heartRate:
           Number(data.heartRate) || 0,
 
@@ -107,15 +221,49 @@ export default function Home() {
           data.riskLevel ||
           data.mlStatus ||
           data.status ||
-          prev.riskLevel,
+          "Normal",
 
         riskScore:
           Number(
             data.riskScore ||
             data.mlConfidence ||
-            prev.riskScore
+            0
           ),
+      };
+
+      // ==================================================
+      // UPDATE UI
+      // ==================================================
+
+      setHealth((prev) => ({
+        ...prev,
+
+        heartRate:
+          onlineHealth.heartRate,
+
+        spo2:
+          onlineHealth.spo2,
+
+        temp:
+          onlineHealth.temp,
+
+        riskLevel:
+          onlineHealth.riskLevel ||
+          prev.riskLevel,
+
+        riskScore:
+          Number(
+            onlineHealth.riskScore
+          ) || prev.riskScore,
       }));
+
+      // ==================================================
+      // SAVE LAST ONLINE DATA
+      // ==================================================
+
+      saveHealthCache(
+        onlineHealth
+      );
     };
 
     // ==================================================
@@ -135,40 +283,52 @@ export default function Home() {
 
           if (!mounted) return;
 
-          // How long since Socket.IO
-          // last gave us data
+          // ==================================================
+          // HOW LONG SINCE SOCKET.IO LAST SENT DATA
+          // ==================================================
+
           const socketDataAge =
-            Date.now() -
-            lastSocketData.current;
+            lastSocketData.current === 0
+              ? Infinity
+              : Date.now() -
+                lastSocketData.current;
 
           console.log(
             "⏱ SOCKET DATA AGE:",
             socketDataAge
           );
 
-          /*
-           * SOCKET.IO DATA PRIORITY
-           *
-           * If Socket.IO has sent data
-           * within last 5 seconds:
-           *
-           *     Socket.IO → UI
-           *
-           * If no Socket.IO data for
-           * more than 5 seconds:
-           *
-           *     ESP32 local → UI
-           */
-
           const socketIsStale =
             socketDataAge > 5000;
 
-          if (socketIsStale) {
+          // ==================================================
+          // OFFLINE / LOCAL MODE
+          // ==================================================
+
+          if (
+            !socket.connected ||
+            socketIsStale
+          ) {
             console.log(
               "📴 USING LOCAL ESP32 DATA"
             );
 
             setConnected(false);
+
+            // ==================================================
+            // LOCAL ESP32 ONLY PROVIDES:
+            //
+            // heartRate
+            // spo2
+            // temp
+            // envtemp
+            // humidity
+            // ecg
+            // dust
+            //
+            // Risk is NOT overwritten here.
+            // Last online risk stays visible.
+            // ==================================================
 
             setHealth((prev) => ({
               ...prev,
@@ -184,8 +344,58 @@ export default function Home() {
               temp:
                 Number(data.temp) || 0,
             }));
-          }
 
+            // ==================================================
+            // SAVE LOCAL VITALS TOO
+            //
+            // IMPORTANT:
+            // Keep previous risk values.
+            // ==================================================
+
+            try {
+              const existingCache =
+                await AsyncStorage.getItem(
+                  HEALTH_CACHE_KEY
+                );
+
+              const previousCache =
+                existingCache
+                  ? JSON.parse(
+                      existingCache
+                    )
+                  : {};
+
+              await AsyncStorage.setItem(
+                HEALTH_CACHE_KEY,
+                JSON.stringify({
+                  ...previousCache,
+
+                  heartRate:
+                    Number(
+                      data.heartRate
+                    ) || 0,
+
+                  spo2:
+                    Number(data.spo2) || 0,
+
+                  temp:
+                    Number(data.temp) || 0,
+
+                  savedAt:
+                    Date.now(),
+                })
+              );
+
+              console.log(
+                "💾 LOCAL DATA CACHED"
+              );
+            } catch (cacheError) {
+              console.log(
+                "❌ LOCAL CACHE ERROR:",
+                cacheError
+              );
+            }
+          }
         } catch (error) {
           console.log(
             "❌ LOCAL ESP32 NOT AVAILABLE:",
@@ -193,6 +403,12 @@ export default function Home() {
           );
         }
       };
+
+    // ==================================================
+    // LOAD CACHE FIRST
+    // ==================================================
+
+    loadCachedHealth();
 
     // ==================================================
     // SOCKET LISTENERS
@@ -233,8 +449,15 @@ export default function Home() {
     // ==================================================
 
     /*
-     * Every 2 seconds ESP32 local
-     * endpoint is checked.
+     * Every 5 seconds:
+     *
+     * ESP32 local endpoint is checked.
+     *
+     * Socket.IO fresh:
+     *      Socket.IO → UI
+     *
+     * Socket.IO disconnected/stale:
+     *      ESP32 local → UI
      */
 
     const localInterval =
@@ -242,7 +465,7 @@ export default function Home() {
         fetchLocalESP32();
       }, 5000);
 
-    // First request immediately
+    // First local request immediately
     fetchLocalESP32();
 
     // ==================================================
@@ -512,7 +735,9 @@ export default function Home() {
           </Text>
         </View>
 
-        <View style={styles.riskArea}>
+        <View
+          style={styles.riskArea}
+        >
           <View
             style={[
               styles.riskCircleOuter,
@@ -1116,18 +1341,21 @@ const styles = StyleSheet.create({
 // export default function Home() {
 //   const [connected, setConnected] = useState(false);
 
+//   // Last time Socket.IO received data
 //   const lastSocketData = useRef(0);
 
 //   const [health, setHealth] = useState({
 //     heartRate: 0,
 //     spo2: 0,
 //     temp: 0,
+
+//     // Online backend risk data
 //     riskLevel: "Normal",
 //     riskScore: 0,
 //   });
 
 //   // ==================================================
-//   // SOCKET.IO + OFFLINE ESP32
+//   // SOCKET.IO + LOCAL ESP32
 //   // ==================================================
 
 //   useEffect(() => {
@@ -1169,7 +1397,7 @@ const styles = StyleSheet.create({
 //     };
 
 //     // ==================================================
-//     // ONLINE HEALTH DATA
+//     // ONLINE SOCKET HEALTH DATA
 //     // ==================================================
 
 //     const handleHealthData = (data: any) => {
@@ -1178,12 +1406,15 @@ const styles = StyleSheet.create({
 //         data
 //       );
 
+//       // Remember latest Socket.IO data time
 //       lastSocketData.current =
 //         Date.now();
 
 //       if (!mounted) return;
 
-//       setHealth({
+//       setHealth((prev) => ({
+//         ...prev,
+
 //         heartRate:
 //           Number(data.heartRate) || 0,
 
@@ -1193,23 +1424,24 @@ const styles = StyleSheet.create({
 //         temp:
 //           Number(data.temp) || 0,
 
+//         // Risk comes from backend / ML
 //         riskLevel:
 //           data.riskLevel ||
 //           data.mlStatus ||
 //           data.status ||
-//           "Normal",
+//           prev.riskLevel,
 
 //         riskScore:
 //           Number(
 //             data.riskScore ||
 //             data.mlConfidence ||
-//             0
+//             prev.riskScore
 //           ),
-//       });
+//       }));
 //     };
 
 //     // ==================================================
-//     // OFFLINE ESP32 DATA
+//     // LOCAL ESP32 DATA
 //     // ==================================================
 
 //     const fetchLocalESP32 =
@@ -1225,24 +1457,44 @@ const styles = StyleSheet.create({
 
 //           if (!mounted) return;
 
+//           // How long since Socket.IO
+//           // last gave us data
 //           const socketDataAge =
 //             Date.now() -
 //             lastSocketData.current;
 
+//           console.log(
+//             "⏱ SOCKET DATA AGE:",
+//             socketDataAge
+//           );
+
+//           /*
+//            * SOCKET.IO DATA PRIORITY
+//            *
+//            * If Socket.IO has sent data
+//            * within last 5 seconds:
+//            *
+//            *     Socket.IO → UI
+//            *
+//            * If no Socket.IO data for
+//            * more than 5 seconds:
+//            *
+//            *     ESP32 local → UI
+//            */
+
 //           const socketIsStale =
 //             socketDataAge > 5000;
 
-//           /*
-//            * If Socket.IO is disconnected
-//            * OR socket data has become stale,
-//            * use local ESP32 data.
-//            */
+//           if (socketIsStale) {
+//             console.log(
+//               "📴 USING LOCAL ESP32 DATA"
+//             );
 
-//           if (
-//             !socket.connected ||
-//             socketIsStale
-//           ) {
-//             setHealth({
+//             setConnected(false);
+
+//             setHealth((prev) => ({
+//               ...prev,
+
 //               heartRate:
 //                 Number(
 //                   data.heartRate
@@ -1253,21 +1505,9 @@ const styles = StyleSheet.create({
 
 //               temp:
 //                 Number(data.temp) || 0,
-
-//               riskLevel:
-//                 data.riskLevel ||
-//                 "Normal",
-
-//               riskScore:
-//                 Number(
-//                   data.riskScore
-//                 ) || 0,
-//             });
-
-//             console.log(
-//               "📴 USING OFFLINE ESP32 DATA"
-//             );
+//             }));
 //           }
+
 //         } catch (error) {
 //           console.log(
 //             "❌ LOCAL ESP32 NOT AVAILABLE:",
@@ -1305,31 +1545,26 @@ const styles = StyleSheet.create({
 
 //     connectSocket();
 
-//     // Already connected
+//     // If already connected
 //     if (socket.connected) {
 //       handleConnect();
 //     }
 
 //     // ==================================================
-//     // OFFLINE ESP32 POLLING
+//     // LOCAL ESP32 POLLING
 //     // ==================================================
 
 //     /*
-//      * Every 2 seconds:
-//      *
-//      * Online + fresh Socket data
-//      *     → Socket.IO remains priority
-//      *
-//      * Offline / Socket disconnected
-//      *     → ESP32 local data
+//      * Every 2 seconds ESP32 local
+//      * endpoint is checked.
 //      */
 
 //     const localInterval =
 //       setInterval(() => {
 //         fetchLocalESP32();
-//       }, 2000);
+//       }, 5000);
 
-//     // First check immediately
+//     // First request immediately
 //     fetchLocalESP32();
 
 //     // ==================================================
@@ -2182,7 +2417,7 @@ const styles = StyleSheet.create({
 // });
 
 
-// // import { useEffect, useState } from "react";
+// // import { useEffect, useRef, useState } from "react";
 
 // // import {
 // //   ScrollView,
@@ -2198,8 +2433,12 @@ const styles = StyleSheet.create({
 
 // // import { DEVICE_ID } from "../../constants/config";
 
+// // import { getESP32Data } from "../../services/esp32";
+
 // // export default function Home() {
 // //   const [connected, setConnected] = useState(false);
+
+// //   const lastSocketData = useRef(0);
 
 // //   const [health, setHealth] = useState({
 // //     heartRate: 0,
@@ -2210,10 +2449,16 @@ const styles = StyleSheet.create({
 // //   });
 
 // //   // ==================================================
-// //   // SOCKET.IO
+// //   // SOCKET.IO + OFFLINE ESP32
 // //   // ==================================================
 
 // //   useEffect(() => {
+// //     let mounted = true;
+
+// //     // ==================================================
+// //     // SOCKET CONNECT
+// //     // ==================================================
+
 // //     const handleConnect = () => {
 // //       console.log(
 // //         "🟢 SOCKET CONNECTED:",
@@ -2233,6 +2478,10 @@ const styles = StyleSheet.create({
 // //       );
 // //     };
 
+// //     // ==================================================
+// //     // SOCKET DISCONNECT
+// //     // ==================================================
+
 // //     const handleDisconnect = () => {
 // //       console.log(
 // //         "🔴 SOCKET DISCONNECTED"
@@ -2241,11 +2490,20 @@ const styles = StyleSheet.create({
 // //       setConnected(false);
 // //     };
 
+// //     // ==================================================
+// //     // ONLINE HEALTH DATA
+// //     // ==================================================
+
 // //     const handleHealthData = (data: any) => {
 // //       console.log(
-// //         "❤️❤️❤️ HEALTH DATA RECEIVED:",
+// //         "❤️ ONLINE HEALTH DATA:",
 // //         data
 // //       );
+
+// //       lastSocketData.current =
+// //         Date.now();
+
+// //       if (!mounted) return;
 
 // //       setHealth({
 // //         heartRate:
@@ -2259,13 +2517,90 @@ const styles = StyleSheet.create({
 
 // //         riskLevel:
 // //           data.riskLevel ||
+// //           data.mlStatus ||
 // //           data.status ||
 // //           "Normal",
 
 // //         riskScore:
-// //           Number(data.riskScore) || 0,
+// //           Number(
+// //             data.riskScore ||
+// //             data.mlConfidence ||
+// //             0
+// //           ),
 // //       });
 // //     };
+
+// //     // ==================================================
+// //     // OFFLINE ESP32 DATA
+// //     // ==================================================
+
+// //     const fetchLocalESP32 =
+// //       async () => {
+// //         try {
+// //           const data =
+// //             await getESP32Data();
+
+// //           console.log(
+// //             "📡 LOCAL ESP32 DATA:",
+// //             data
+// //           );
+
+// //           if (!mounted) return;
+
+// //           const socketDataAge =
+// //             Date.now() -
+// //             lastSocketData.current;
+
+// //           const socketIsStale =
+// //             socketDataAge > 5000;
+
+// //           /*
+// //            * If Socket.IO is disconnected
+// //            * OR socket data has become stale,
+// //            * use local ESP32 data.
+// //            */
+
+// //           if (
+// //             !socket.connected ||
+// //             socketIsStale
+// //           ) {
+// //             setHealth({
+// //               heartRate:
+// //                 Number(
+// //                   data.heartRate
+// //                 ) || 0,
+
+// //               spo2:
+// //                 Number(data.spo2) || 0,
+
+// //               temp:
+// //                 Number(data.temp) || 0,
+
+// //               riskLevel:
+// //                 data.riskLevel ||
+// //                 "Normal",
+
+// //               riskScore:
+// //                 Number(
+// //                   data.riskScore
+// //                 ) || 0,
+// //             });
+
+// //             console.log(
+// //               "📴 USING OFFLINE ESP32 DATA"
+// //             );
+// //           }
+// //         } catch (error) {
+// //           console.log(
+// //             "❌ LOCAL ESP32 NOT AVAILABLE:",
+// //             error
+// //           );
+// //         }
+// //       };
+
+// //     // ==================================================
+// //     // SOCKET LISTENERS
+// //     // ==================================================
 
 // //     socket.on(
 // //       "connect",
@@ -2282,18 +2617,54 @@ const styles = StyleSheet.create({
 // //       handleHealthData
 // //     );
 
+// //     // ==================================================
+// //     // CONNECT SOCKET
+// //     // ==================================================
+
 // //     console.log(
 // //       "🔌 CONNECTING SOCKET..."
 // //     );
 
 // //     connectSocket();
 
-// //     // Agar socket already connected hai
+// //     // Already connected
 // //     if (socket.connected) {
 // //       handleConnect();
 // //     }
 
+// //     // ==================================================
+// //     // OFFLINE ESP32 POLLING
+// //     // ==================================================
+
+// //     /*
+// //      * Every 2 seconds:
+// //      *
+// //      * Online + fresh Socket data
+// //      *     → Socket.IO remains priority
+// //      *
+// //      * Offline / Socket disconnected
+// //      *     → ESP32 local data
+// //      */
+
+// //     const localInterval =
+// //       setInterval(() => {
+// //         fetchLocalESP32();
+// //       }, 2000);
+
+// //     // First check immediately
+// //     fetchLocalESP32();
+
+// //     // ==================================================
+// //     // CLEANUP
+// //     // ==================================================
+
 // //     return () => {
+// //       mounted = false;
+
+// //       clearInterval(
+// //         localInterval
+// //       );
+
 // //       socket.off(
 // //         "connect",
 // //         handleConnect
@@ -2316,8 +2687,9 @@ const styles = StyleSheet.create({
 // //   // ==================================================
 
 // //   const risk =
-// //     String(health.riskLevel)
-// //       .toLowerCase();
+// //     String(
+// //       health.riskLevel
+// //     ).toLowerCase();
 
 // //   let riskColor = "#16A34A";
 // //   let riskBg = "#DCFCE7";
@@ -2352,25 +2724,33 @@ const styles = StyleSheet.create({
 // //       contentContainerStyle={
 // //         styles.content
 // //       }
-// //       showsVerticalScrollIndicator={false}
+// //       showsVerticalScrollIndicator={
+// //         false
+// //       }
 // //     >
-// //       {/* ============================================
-// //           HEADER
-// //       ============================================ */}
+// //       {/* HEADER */}
 
 // //       <View style={styles.header}>
 // //         <View>
-// //           <Text style={styles.greeting}>
+// //           <Text
+// //             style={styles.greeting}
+// //           >
 // //             Good Evening, Sonu! 👋
 // //           </Text>
 
-// //           <Text style={styles.subtitle}>
+// //           <Text
+// //             style={styles.subtitle}
+// //           >
 // //             Here's your health overview
 // //           </Text>
 // //         </View>
 
-// //         <View style={styles.headerRight}>
-// //           <View style={styles.notification}>
+// //         <View
+// //           style={styles.headerRight}
+// //         >
+// //           <View
+// //             style={styles.notification}
+// //           >
 // //             <Text
 // //               style={
 // //                 styles.notificationIcon
@@ -2386,21 +2766,29 @@ const styles = StyleSheet.create({
 // //             />
 // //           </View>
 
-// //           <View style={styles.avatar}>
-// //             <Text style={styles.avatarText}>
+// //           <View
+// //             style={styles.avatar}
+// //           >
+// //             <Text
+// //               style={styles.avatarText}
+// //             >
 // //               S
 // //             </Text>
 // //           </View>
 // //         </View>
 // //       </View>
 
-// //       {/* ============================================
-// //           DEVICE STATUS
-// //       ============================================ */}
+// //       {/* DEVICE STATUS */}
 
-// //       <View style={styles.deviceCard}>
-// //         <View style={styles.deviceLeft}>
-// //           <View style={styles.deviceIcon}>
+// //       <View
+// //         style={styles.deviceCard}
+// //       >
+// //         <View
+// //           style={styles.deviceLeft}
+// //         >
+// //           <View
+// //             style={styles.deviceIcon}
+// //           >
 // //             <Text
 // //               style={
 // //                 styles.deviceIconText
@@ -2411,38 +2799,48 @@ const styles = StyleSheet.create({
 // //           </View>
 
 // //           <View>
-// //             <Text style={styles.deviceTitle}>
+// //             <Text
+// //               style={styles.deviceTitle}
+// //             >
 // //               Health Device
 // //             </Text>
 
-// //             <Text style={styles.deviceId}>
+// //             <Text
+// //               style={styles.deviceId}
+// //             >
 // //               {DEVICE_ID}
 // //             </Text>
 // //           </View>
 // //         </View>
 
-// //         <View style={styles.onlineBadge}>
+// //         <View
+// //           style={styles.onlineBadge}
+// //         >
 // //           <View
 // //             style={styles.onlineDot}
 // //           />
 
-// //           <Text style={styles.onlineText}>
+// //           <Text
+// //             style={styles.onlineText}
+// //           >
 // //             {connected
 // //               ? "ONLINE"
-// //               : "WAITING"}
+// //               : "LOCAL"}
 // //           </Text>
 // //         </View>
 // //       </View>
 
-// //       {/* ============================================
-// //           HEALTH OVERVIEW
-// //       ============================================ */}
+// //       {/* HEALTH OVERVIEW */}
 
-// //       <Text style={styles.sectionTitle}>
+// //       <Text
+// //         style={styles.sectionTitle}
+// //       >
 // //         Health Overview
 // //       </Text>
 
-// //       <View style={styles.healthGrid}>
+// //       <View
+// //         style={styles.healthGrid}
+// //       >
 // //         {/* HEART RATE */}
 
 // //         <MetricCard
@@ -2496,23 +2894,29 @@ const styles = StyleSheet.create({
 // //         />
 // //       </View>
 
-// //       {/* ============================================
-// //           AI RISK SCORE
-// //       ============================================ */}
+// //       {/* AI RISK SCORE */}
 
 // //       <View style={styles.card}>
-// //         <View style={styles.cardHeader}>
+// //         <View
+// //           style={styles.cardHeader}
+// //         >
 // //           <View>
-// //             <Text style={styles.cardTitle}>
+// //             <Text
+// //               style={styles.cardTitle}
+// //             >
 // //               AI Risk Score
 // //             </Text>
 
-// //             <Text style={styles.cardSubtitle}>
+// //             <Text
+// //               style={styles.cardSubtitle}
+// //             >
 // //               Real-time health analysis
 // //             </Text>
 // //           </View>
 
-// //           <Text style={styles.sparkleIcon}>
+// //           <Text
+// //             style={styles.sparkleIcon}
+// //           >
 // //             ✦
 // //           </Text>
 // //         </View>
@@ -2548,7 +2952,9 @@ const styles = StyleSheet.create({
 // //                 {health.riskScore}
 // //               </Text>
 
-// //               <Text style={styles.outOf}>
+// //               <Text
+// //                 style={styles.outOf}
+// //               >
 // //                 /100
 // //               </Text>
 // //             </View>
@@ -2607,11 +3013,14 @@ const styles = StyleSheet.create({
 // //               },
 // //             ]}
 // //           >
-// //             You are at {health.riskLevel}
+// //             You are at{" "}
+// //             {health.riskLevel}
 // //           </Text>
 
 // //           <Text
-// //             style={styles.riskMessageText}
+// //             style={
+// //               styles.riskMessageText
+// //             }
 // //           >
 // //             {risk.includes("high") ||
 // //             risk.includes("critical") ||
@@ -2622,11 +3031,11 @@ const styles = StyleSheet.create({
 // //         </View>
 // //       </View>
 
-// //       {/* ============================================
-// //           BOTTOM TAB SPACE
-// //       ============================================ */}
+// //       {/* BOTTOM TAB SPACE */}
 
-// //       <View style={styles.tabSpace} />
+// //       <View
+// //         style={styles.tabSpace}
+// //       />
 // //     </ScrollView>
 // //   );
 // // }
@@ -2650,13 +3059,18 @@ const styles = StyleSheet.create({
 // //       ? [20, 35, 25, 55, 40, 70, 50]
 // //       : graphType === "spo2"
 // //       ? [65, 70, 62, 75, 68, 78, 72]
-// //       : graphType === "temperature"
+// //       : graphType ===
+// //         "temperature"
 // //       ? [30, 38, 35, 45, 42, 50, 47]
 // //       : [25, 35, 28, 48, 38, 62, 50];
 
 // //   return (
-// //     <View style={styles.metricCard}>
-// //       <View style={styles.metricTop}>
+// //     <View
+// //       style={styles.metricCard}
+// //     >
+// //       <View
+// //         style={styles.metricTop}
+// //       >
 // //         <View
 // //           style={[
 // //             styles.metricIcon,
@@ -2679,32 +3093,42 @@ const styles = StyleSheet.create({
 // //           </Text>
 // //         </View>
 
-// //         <Text style={styles.metricTitle}>
+// //         <Text
+// //           style={styles.metricTitle}
+// //         >
 // //           {title}
 // //         </Text>
 // //       </View>
 
-// //       <View style={styles.metricValueRow}>
-// //         <Text style={styles.metricValue}>
+// //       <View
+// //         style={styles.metricValueRow}
+// //       >
+// //         <Text
+// //           style={styles.metricValue}
+// //         >
 // //           {value}
 // //         </Text>
 
 // //         {unit ? (
-// //           <Text style={styles.metricUnit}>
+// //           <Text
+// //             style={styles.metricUnit}
+// //           >
 // //             {unit}
 // //           </Text>
 // //         ) : null}
 // //       </View>
 
 // //       <Text
-// //         style={styles.metricComparison}
+// //         style={
+// //           styles.metricComparison
+// //         }
 // //       >
 // //         {comparison}
 // //       </Text>
 
-// //       {/* Mini graph */}
-
-// //       <View style={styles.miniGraph}>
+// //       <View
+// //         style={styles.miniGraph}
+// //       >
 // //         {graphPoints.map(
 // //           (
 // //             height: number,
@@ -2733,10 +3157,6 @@ const styles = StyleSheet.create({
 // // // ==================================================
 
 // // const styles = StyleSheet.create({
-// //   // ==============================
-// //   // MAIN
-// //   // ==============================
-
 // //   container: {
 // //     flex: 1,
 // //     backgroundColor: "#F8FAFC",
@@ -2747,13 +3167,10 @@ const styles = StyleSheet.create({
 // //     paddingTop: 55,
 // //   },
 
-// //   // ==============================
-// //   // HEADER
-// //   // ==============================
-
 // //   header: {
 // //     flexDirection: "row",
-// //     justifyContent: "space-between",
+// //     justifyContent:
+// //       "space-between",
 // //     alignItems: "center",
 // //     marginBottom: 20,
 // //   },
@@ -2818,16 +3235,13 @@ const styles = StyleSheet.create({
 // //     fontWeight: "800",
 // //   },
 
-// //   // ==============================
-// //   // DEVICE
-// //   // ==============================
-
 // //   deviceCard: {
 // //     backgroundColor: "#FFFFFF",
 // //     borderRadius: 18,
 // //     padding: 15,
 // //     flexDirection: "row",
-// //     justifyContent: "space-between",
+// //     justifyContent:
+// //       "space-between",
 // //     alignItems: "center",
 // //     marginBottom: 25,
 // //     borderWidth: 1,
@@ -2889,10 +3303,6 @@ const styles = StyleSheet.create({
 // //     color: "#15803D",
 // //   },
 
-// //   // ==============================
-// //   // SECTION
-// //   // ==============================
-
 // //   sectionTitle: {
 // //     fontSize: 18,
 // //     fontWeight: "800",
@@ -2903,12 +3313,9 @@ const styles = StyleSheet.create({
 // //   healthGrid: {
 // //     flexDirection: "row",
 // //     flexWrap: "wrap",
-// //     justifyContent: "space-between",
+// //     justifyContent:
+// //       "space-between",
 // //   },
-
-// //   // ==============================
-// //   // METRIC
-// //   // ==============================
 
 // //   metricCard: {
 // //     width: "48.3%",
@@ -2975,7 +3382,8 @@ const styles = StyleSheet.create({
 // //     marginTop: 10,
 // //     flexDirection: "row",
 // //     alignItems: "flex-end",
-// //     justifyContent: "space-between",
+// //     justifyContent:
+// //       "space-between",
 // //     gap: 4,
 // //   },
 
@@ -2985,10 +3393,6 @@ const styles = StyleSheet.create({
 // //     opacity: 0.65,
 // //     borderRadius: 4,
 // //   },
-
-// //   // ==============================
-// //   // CARD
-// //   // ==============================
 
 // //   card: {
 // //     backgroundColor: "#FFFFFF",
@@ -3002,7 +3406,8 @@ const styles = StyleSheet.create({
 
 // //   cardHeader: {
 // //     flexDirection: "row",
-// //     justifyContent: "space-between",
+// //     justifyContent:
+// //       "space-between",
 // //     alignItems: "flex-start",
 // //   },
 
@@ -3022,10 +3427,6 @@ const styles = StyleSheet.create({
 // //     fontSize: 23,
 // //     color: "#7C3AED",
 // //   },
-
-// //   // ==============================
-// //   // RISK
-// //   // ==============================
 
 // //   riskArea: {
 // //     alignItems: "center",
@@ -3097,11 +3498,932 @@ const styles = StyleSheet.create({
 // //     color: "#6B7280",
 // //   },
 
-// //   // ==============================
-// //   // TABS SPACE
-// //   // ==============================
-
 // //   tabSpace: {
 // //     height: 90,
 // //   },
 // // });
+
+
+// // // import { useEffect, useState } from "react";
+
+// // // import {
+// // //   ScrollView,
+// // //   StyleSheet,
+// // //   Text,
+// // //   View,
+// // // } from "react-native";
+
+// // // import {
+// // //   socket,
+// // //   connectSocket,
+// // // } from "../../services/socket";
+
+// // // import { DEVICE_ID } from "../../constants/config";
+
+// // // export default function Home() {
+// // //   const [connected, setConnected] = useState(false);
+
+// // //   const [health, setHealth] = useState({
+// // //     heartRate: 0,
+// // //     spo2: 0,
+// // //     temp: 0,
+// // //     riskLevel: "Normal",
+// // //     riskScore: 0,
+// // //   });
+
+// // //   // ==================================================
+// // //   // SOCKET.IO
+// // //   // ==================================================
+
+// // //   useEffect(() => {
+// // //     const handleConnect = () => {
+// // //       console.log(
+// // //         "🟢 SOCKET CONNECTED:",
+// // //         socket.id
+// // //       );
+
+// // //       setConnected(true);
+
+// // //       console.log(
+// // //         "📡 JOINING DEVICE:",
+// // //         DEVICE_ID
+// // //       );
+
+// // //       socket.emit(
+// // //         "joinDevice",
+// // //         DEVICE_ID
+// // //       );
+// // //     };
+
+// // //     const handleDisconnect = () => {
+// // //       console.log(
+// // //         "🔴 SOCKET DISCONNECTED"
+// // //       );
+
+// // //       setConnected(false);
+// // //     };
+
+// // //     const handleHealthData = (data: any) => {
+// // //       console.log(
+// // //         "❤️❤️❤️ HEALTH DATA RECEIVED:",
+// // //         data
+// // //       );
+
+// // //       setHealth({
+// // //         heartRate:
+// // //           Number(data.heartRate) || 0,
+
+// // //         spo2:
+// // //           Number(data.spo2) || 0,
+
+// // //         temp:
+// // //           Number(data.temp) || 0,
+
+// // //         riskLevel:
+// // //           data.riskLevel ||
+// // //           data.status ||
+// // //           "Normal",
+
+// // //         riskScore:
+// // //           Number(data.riskScore) || 0,
+// // //       });
+// // //     };
+
+// // //     socket.on(
+// // //       "connect",
+// // //       handleConnect
+// // //     );
+
+// // //     socket.on(
+// // //       "disconnect",
+// // //       handleDisconnect
+// // //     );
+
+// // //     socket.on(
+// // //       "healthData",
+// // //       handleHealthData
+// // //     );
+
+// // //     console.log(
+// // //       "🔌 CONNECTING SOCKET..."
+// // //     );
+
+// // //     connectSocket();
+
+// // //     // Agar socket already connected hai
+// // //     if (socket.connected) {
+// // //       handleConnect();
+// // //     }
+
+// // //     return () => {
+// // //       socket.off(
+// // //         "connect",
+// // //         handleConnect
+// // //       );
+
+// // //       socket.off(
+// // //         "disconnect",
+// // //         handleDisconnect
+// // //       );
+
+// // //       socket.off(
+// // //         "healthData",
+// // //         handleHealthData
+// // //       );
+// // //     };
+// // //   }, []);
+
+// // //   // ==================================================
+// // //   // RISK
+// // //   // ==================================================
+
+// // //   const risk =
+// // //     String(health.riskLevel)
+// // //       .toLowerCase();
+
+// // //   let riskColor = "#16A34A";
+// // //   let riskBg = "#DCFCE7";
+// // //   let riskSymbol = "✓";
+
+// // //   if (
+// // //     risk.includes("moderate") ||
+// // //     risk.includes("warning")
+// // //   ) {
+// // //     riskColor = "#D97706";
+// // //     riskBg = "#FEF3C7";
+// // //     riskSymbol = "!";
+// // //   }
+
+// // //   if (
+// // //     risk.includes("high") ||
+// // //     risk.includes("critical") ||
+// // //     risk.includes("abnormal")
+// // //   ) {
+// // //     riskColor = "#DC2626";
+// // //     riskBg = "#FEE2E2";
+// // //     riskSymbol = "!";
+// // //   }
+
+// // //   // ==================================================
+// // //   // MAIN UI
+// // //   // ==================================================
+
+// // //   return (
+// // //     <ScrollView
+// // //       style={styles.container}
+// // //       contentContainerStyle={
+// // //         styles.content
+// // //       }
+// // //       showsVerticalScrollIndicator={false}
+// // //     >
+// // //       {/* ============================================
+// // //           HEADER
+// // //       ============================================ */}
+
+// // //       <View style={styles.header}>
+// // //         <View>
+// // //           <Text style={styles.greeting}>
+// // //             Good Evening, Sonu! 👋
+// // //           </Text>
+
+// // //           <Text style={styles.subtitle}>
+// // //             Here's your health overview
+// // //           </Text>
+// // //         </View>
+
+// // //         <View style={styles.headerRight}>
+// // //           <View style={styles.notification}>
+// // //             <Text
+// // //               style={
+// // //                 styles.notificationIcon
+// // //               }
+// // //             >
+// // //               ♢
+// // //             </Text>
+
+// // //             <View
+// // //               style={
+// // //                 styles.notificationDot
+// // //               }
+// // //             />
+// // //           </View>
+
+// // //           <View style={styles.avatar}>
+// // //             <Text style={styles.avatarText}>
+// // //               S
+// // //             </Text>
+// // //           </View>
+// // //         </View>
+// // //       </View>
+
+// // //       {/* ============================================
+// // //           DEVICE STATUS
+// // //       ============================================ */}
+
+// // //       <View style={styles.deviceCard}>
+// // //         <View style={styles.deviceLeft}>
+// // //           <View style={styles.deviceIcon}>
+// // //             <Text
+// // //               style={
+// // //                 styles.deviceIconText
+// // //               }
+// // //             >
+// // //               ▣
+// // //             </Text>
+// // //           </View>
+
+// // //           <View>
+// // //             <Text style={styles.deviceTitle}>
+// // //               Health Device
+// // //             </Text>
+
+// // //             <Text style={styles.deviceId}>
+// // //               {DEVICE_ID}
+// // //             </Text>
+// // //           </View>
+// // //         </View>
+
+// // //         <View style={styles.onlineBadge}>
+// // //           <View
+// // //             style={styles.onlineDot}
+// // //           />
+
+// // //           <Text style={styles.onlineText}>
+// // //             {connected
+// // //               ? "ONLINE"
+// // //               : "WAITING"}
+// // //           </Text>
+// // //         </View>
+// // //       </View>
+
+// // //       {/* ============================================
+// // //           HEALTH OVERVIEW
+// // //       ============================================ */}
+
+// // //       <Text style={styles.sectionTitle}>
+// // //         Health Overview
+// // //       </Text>
+
+// // //       <View style={styles.healthGrid}>
+// // //         {/* HEART RATE */}
+
+// // //         <MetricCard
+// // //           icon="♥"
+// // //           iconColor="#EF4444"
+// // //           iconBg="#FEE2E2"
+// // //           title="Heart Rate"
+// // //           value={health.heartRate}
+// // //           unit="BPM"
+// // //           comparison="Live monitoring"
+// // //           graphType="heart"
+// // //         />
+
+// // //         {/* SPO2 */}
+
+// // //         <MetricCard
+// // //           icon="◉"
+// // //           iconColor="#2563EB"
+// // //           iconBg="#DBEAFE"
+// // //           title="SpO₂"
+// // //           value={health.spo2}
+// // //           unit="%"
+// // //           comparison="Blood oxygen"
+// // //           graphType="spo2"
+// // //         />
+
+// // //         {/* TEMPERATURE */}
+
+// // //         <MetricCard
+// // //           icon="♨"
+// // //           iconColor="#F97316"
+// // //           iconBg="#FFEDD5"
+// // //           title="Temperature"
+// // //           value={health.temp}
+// // //           unit="°C"
+// // //           comparison="Body temperature"
+// // //           graphType="temperature"
+// // //         />
+
+// // //         {/* ACTIVITY */}
+
+// // //         <MetricCard
+// // //           icon="●"
+// // //           iconColor="#16A34A"
+// // //           iconBg="#DCFCE7"
+// // //           title="Activity"
+// // //           value="Active"
+// // //           unit=""
+// // //           comparison="Device connected"
+// // //           graphType="activity"
+// // //         />
+// // //       </View>
+
+// // //       {/* ============================================
+// // //           AI RISK SCORE
+// // //       ============================================ */}
+
+// // //       <View style={styles.card}>
+// // //         <View style={styles.cardHeader}>
+// // //           <View>
+// // //             <Text style={styles.cardTitle}>
+// // //               AI Risk Score
+// // //             </Text>
+
+// // //             <Text style={styles.cardSubtitle}>
+// // //               Real-time health analysis
+// // //             </Text>
+// // //           </View>
+
+// // //           <Text style={styles.sparkleIcon}>
+// // //             ✦
+// // //           </Text>
+// // //         </View>
+
+// // //         <View style={styles.riskArea}>
+// // //           <View
+// // //             style={[
+// // //               styles.riskCircleOuter,
+// // //               {
+// // //                 borderColor:
+// // //                   riskColor,
+// // //               },
+// // //             ]}
+// // //           >
+// // //             <View
+// // //               style={[
+// // //                 styles.riskCircleInner,
+// // //                 {
+// // //                   backgroundColor:
+// // //                     riskBg,
+// // //                 },
+// // //               ]}
+// // //             >
+// // //               <Text
+// // //                 style={[
+// // //                   styles.riskScore,
+// // //                   {
+// // //                     color:
+// // //                       riskColor,
+// // //                   },
+// // //                 ]}
+// // //               >
+// // //                 {health.riskScore}
+// // //               </Text>
+
+// // //               <Text style={styles.outOf}>
+// // //                 /100
+// // //               </Text>
+// // //             </View>
+// // //           </View>
+
+// // //           <View
+// // //             style={[
+// // //               styles.riskBadge,
+// // //               {
+// // //                 backgroundColor:
+// // //                   riskBg,
+// // //               },
+// // //             ]}
+// // //           >
+// // //             <Text
+// // //               style={[
+// // //                 styles.riskSymbol,
+// // //                 {
+// // //                   color:
+// // //                     riskColor,
+// // //                 },
+// // //               ]}
+// // //             >
+// // //               {riskSymbol}
+// // //             </Text>
+
+// // //             <Text
+// // //               style={[
+// // //                 styles.riskBadgeText,
+// // //                 {
+// // //                   color:
+// // //                     riskColor,
+// // //                 },
+// // //               ]}
+// // //             >
+// // //               {health.riskLevel}
+// // //             </Text>
+// // //           </View>
+// // //         </View>
+
+// // //         <View
+// // //           style={[
+// // //             styles.riskMessage,
+// // //             {
+// // //               backgroundColor:
+// // //                 riskBg,
+// // //             },
+// // //           ]}
+// // //         >
+// // //           <Text
+// // //             style={[
+// // //               styles.riskMessageTitle,
+// // //               {
+// // //                 color:
+// // //                   riskColor,
+// // //               },
+// // //             ]}
+// // //           >
+// // //             You are at {health.riskLevel}
+// // //           </Text>
+
+// // //           <Text
+// // //             style={styles.riskMessageText}
+// // //           >
+// // //             {risk.includes("high") ||
+// // //             risk.includes("critical") ||
+// // //             risk.includes("abnormal")
+// // //               ? "Immediate attention recommended."
+// // //               : "Continue monitoring your health."}
+// // //           </Text>
+// // //         </View>
+// // //       </View>
+
+// // //       {/* ============================================
+// // //           BOTTOM TAB SPACE
+// // //       ============================================ */}
+
+// // //       <View style={styles.tabSpace} />
+// // //     </ScrollView>
+// // //   );
+// // // }
+
+// // // // ==================================================
+// // // // METRIC CARD
+// // // // ==================================================
+
+// // // function MetricCard({
+// // //   icon,
+// // //   iconColor,
+// // //   iconBg,
+// // //   title,
+// // //   value,
+// // //   unit,
+// // //   comparison,
+// // //   graphType,
+// // // }: any) {
+// // //   const graphPoints =
+// // //     graphType === "activity"
+// // //       ? [20, 35, 25, 55, 40, 70, 50]
+// // //       : graphType === "spo2"
+// // //       ? [65, 70, 62, 75, 68, 78, 72]
+// // //       : graphType === "temperature"
+// // //       ? [30, 38, 35, 45, 42, 50, 47]
+// // //       : [25, 35, 28, 48, 38, 62, 50];
+
+// // //   return (
+// // //     <View style={styles.metricCard}>
+// // //       <View style={styles.metricTop}>
+// // //         <View
+// // //           style={[
+// // //             styles.metricIcon,
+// // //             {
+// // //               backgroundColor:
+// // //                 iconBg,
+// // //             },
+// // //           ]}
+// // //         >
+// // //           <Text
+// // //             style={[
+// // //               styles.metricIconText,
+// // //               {
+// // //                 color:
+// // //                   iconColor,
+// // //               },
+// // //             ]}
+// // //           >
+// // //             {icon}
+// // //           </Text>
+// // //         </View>
+
+// // //         <Text style={styles.metricTitle}>
+// // //           {title}
+// // //         </Text>
+// // //       </View>
+
+// // //       <View style={styles.metricValueRow}>
+// // //         <Text style={styles.metricValue}>
+// // //           {value}
+// // //         </Text>
+
+// // //         {unit ? (
+// // //           <Text style={styles.metricUnit}>
+// // //             {unit}
+// // //           </Text>
+// // //         ) : null}
+// // //       </View>
+
+// // //       <Text
+// // //         style={styles.metricComparison}
+// // //       >
+// // //         {comparison}
+// // //       </Text>
+
+// // //       {/* Mini graph */}
+
+// // //       <View style={styles.miniGraph}>
+// // //         {graphPoints.map(
+// // //           (
+// // //             height: number,
+// // //             index: number
+// // //           ) => (
+// // //             <View
+// // //               key={index}
+// // //               style={[
+// // //                 styles.graphBar,
+// // //                 {
+// // //                   height: `${height}%`,
+// // //                   backgroundColor:
+// // //                     iconColor,
+// // //                 },
+// // //               ]}
+// // //             />
+// // //           )
+// // //         )}
+// // //       </View>
+// // //     </View>
+// // //   );
+// // // }
+
+// // // // ==================================================
+// // // // STYLES
+// // // // ==================================================
+
+// // // const styles = StyleSheet.create({
+// // //   // ==============================
+// // //   // MAIN
+// // //   // ==============================
+
+// // //   container: {
+// // //     flex: 1,
+// // //     backgroundColor: "#F8FAFC",
+// // //   },
+
+// // //   content: {
+// // //     paddingHorizontal: 18,
+// // //     paddingTop: 55,
+// // //   },
+
+// // //   // ==============================
+// // //   // HEADER
+// // //   // ==============================
+
+// // //   header: {
+// // //     flexDirection: "row",
+// // //     justifyContent: "space-between",
+// // //     alignItems: "center",
+// // //     marginBottom: 20,
+// // //   },
+
+// // //   greeting: {
+// // //     fontSize: 22,
+// // //     fontWeight: "800",
+// // //     color: "#111827",
+// // //   },
+
+// // //   subtitle: {
+// // //     marginTop: 5,
+// // //     fontSize: 13,
+// // //     color: "#8A94A6",
+// // //   },
+
+// // //   headerRight: {
+// // //     flexDirection: "row",
+// // //     alignItems: "center",
+// // //     gap: 10,
+// // //   },
+
+// // //   notification: {
+// // //     width: 42,
+// // //     height: 42,
+// // //     borderRadius: 14,
+// // //     backgroundColor: "#FFFFFF",
+// // //     justifyContent: "center",
+// // //     alignItems: "center",
+// // //     position: "relative",
+// // //     borderWidth: 1,
+// // //     borderColor: "#EEF1F5",
+// // //   },
+
+// // //   notificationIcon: {
+// // //     fontSize: 24,
+// // //     color: "#374151",
+// // //   },
+
+// // //   notificationDot: {
+// // //     position: "absolute",
+// // //     top: 9,
+// // //     right: 9,
+// // //     width: 7,
+// // //     height: 7,
+// // //     borderRadius: 5,
+// // //     backgroundColor: "#EF4444",
+// // //   },
+
+// // //   avatar: {
+// // //     width: 42,
+// // //     height: 42,
+// // //     borderRadius: 14,
+// // //     backgroundColor: "#111827",
+// // //     justifyContent: "center",
+// // //     alignItems: "center",
+// // //   },
+
+// // //   avatarText: {
+// // //     color: "#FFFFFF",
+// // //     fontSize: 16,
+// // //     fontWeight: "800",
+// // //   },
+
+// // //   // ==============================
+// // //   // DEVICE
+// // //   // ==============================
+
+// // //   deviceCard: {
+// // //     backgroundColor: "#FFFFFF",
+// // //     borderRadius: 18,
+// // //     padding: 15,
+// // //     flexDirection: "row",
+// // //     justifyContent: "space-between",
+// // //     alignItems: "center",
+// // //     marginBottom: 25,
+// // //     borderWidth: 1,
+// // //     borderColor: "#EEF1F5",
+// // //   },
+
+// // //   deviceLeft: {
+// // //     flexDirection: "row",
+// // //     alignItems: "center",
+// // //   },
+
+// // //   deviceIcon: {
+// // //     width: 43,
+// // //     height: 43,
+// // //     borderRadius: 13,
+// // //     backgroundColor: "#EFF6FF",
+// // //     justifyContent: "center",
+// // //     alignItems: "center",
+// // //     marginRight: 11,
+// // //   },
+
+// // //   deviceIconText: {
+// // //     fontSize: 21,
+// // //     color: "#2563EB",
+// // //   },
+
+// // //   deviceTitle: {
+// // //     fontSize: 14,
+// // //     fontWeight: "700",
+// // //     color: "#111827",
+// // //   },
+
+// // //   deviceId: {
+// // //     marginTop: 3,
+// // //     fontSize: 11,
+// // //     color: "#9CA3AF",
+// // //   },
+
+// // //   onlineBadge: {
+// // //     flexDirection: "row",
+// // //     alignItems: "center",
+// // //     backgroundColor: "#DCFCE7",
+// // //     paddingHorizontal: 10,
+// // //     paddingVertical: 7,
+// // //     borderRadius: 20,
+// // //   },
+
+// // //   onlineDot: {
+// // //     width: 7,
+// // //     height: 7,
+// // //     borderRadius: 5,
+// // //     backgroundColor: "#22C55E",
+// // //     marginRight: 5,
+// // //   },
+
+// // //   onlineText: {
+// // //     fontSize: 10,
+// // //     fontWeight: "800",
+// // //     color: "#15803D",
+// // //   },
+
+// // //   // ==============================
+// // //   // SECTION
+// // //   // ==============================
+
+// // //   sectionTitle: {
+// // //     fontSize: 18,
+// // //     fontWeight: "800",
+// // //     color: "#111827",
+// // //     marginBottom: 13,
+// // //   },
+
+// // //   healthGrid: {
+// // //     flexDirection: "row",
+// // //     flexWrap: "wrap",
+// // //     justifyContent: "space-between",
+// // //   },
+
+// // //   // ==============================
+// // //   // METRIC
+// // //   // ==============================
+
+// // //   metricCard: {
+// // //     width: "48.3%",
+// // //     backgroundColor: "#FFFFFF",
+// // //     borderRadius: 18,
+// // //     padding: 15,
+// // //     marginBottom: 12,
+// // //     borderWidth: 1,
+// // //     borderColor: "#EEF1F5",
+// // //   },
+
+// // //   metricTop: {
+// // //     flexDirection: "row",
+// // //     alignItems: "center",
+// // //   },
+
+// // //   metricIcon: {
+// // //     width: 34,
+// // //     height: 34,
+// // //     borderRadius: 11,
+// // //     justifyContent: "center",
+// // //     alignItems: "center",
+// // //     marginRight: 8,
+// // //   },
+
+// // //   metricIconText: {
+// // //     fontSize: 18,
+// // //     fontWeight: "800",
+// // //   },
+
+// // //   metricTitle: {
+// // //     fontSize: 12,
+// // //     color: "#6B7280",
+// // //     fontWeight: "600",
+// // //   },
+
+// // //   metricValueRow: {
+// // //     flexDirection: "row",
+// // //     alignItems: "baseline",
+// // //     marginTop: 12,
+// // //   },
+
+// // //   metricValue: {
+// // //     fontSize: 27,
+// // //     fontWeight: "800",
+// // //     color: "#111827",
+// // //   },
+
+// // //   metricUnit: {
+// // //     marginLeft: 4,
+// // //     fontSize: 11,
+// // //     color: "#8A94A6",
+// // //     fontWeight: "600",
+// // //   },
+
+// // //   metricComparison: {
+// // //     marginTop: 4,
+// // //     fontSize: 10,
+// // //     color: "#9CA3AF",
+// // //   },
+
+// // //   miniGraph: {
+// // //     height: 38,
+// // //     marginTop: 10,
+// // //     flexDirection: "row",
+// // //     alignItems: "flex-end",
+// // //     justifyContent: "space-between",
+// // //     gap: 4,
+// // //   },
+
+// // //   graphBar: {
+// // //     flex: 1,
+// // //     minHeight: 4,
+// // //     opacity: 0.65,
+// // //     borderRadius: 4,
+// // //   },
+
+// // //   // ==============================
+// // //   // CARD
+// // //   // ==============================
+
+// // //   card: {
+// // //     backgroundColor: "#FFFFFF",
+// // //     borderRadius: 20,
+// // //     padding: 17,
+// // //     marginTop: 8,
+// // //     marginBottom: 14,
+// // //     borderWidth: 1,
+// // //     borderColor: "#EEF1F5",
+// // //   },
+
+// // //   cardHeader: {
+// // //     flexDirection: "row",
+// // //     justifyContent: "space-between",
+// // //     alignItems: "flex-start",
+// // //   },
+
+// // //   cardTitle: {
+// // //     fontSize: 16,
+// // //     fontWeight: "800",
+// // //     color: "#111827",
+// // //   },
+
+// // //   cardSubtitle: {
+// // //     marginTop: 4,
+// // //     fontSize: 11,
+// // //     color: "#9CA3AF",
+// // //   },
+
+// // //   sparkleIcon: {
+// // //     fontSize: 23,
+// // //     color: "#7C3AED",
+// // //   },
+
+// // //   // ==============================
+// // //   // RISK
+// // //   // ==============================
+
+// // //   riskArea: {
+// // //     alignItems: "center",
+// // //     marginTop: 20,
+// // //   },
+
+// // //   riskCircleOuter: {
+// // //     width: 145,
+// // //     height: 145,
+// // //     borderRadius: 100,
+// // //     borderWidth: 12,
+// // //     justifyContent: "center",
+// // //     alignItems: "center",
+// // //   },
+
+// // //   riskCircleInner: {
+// // //     width: 108,
+// // //     height: 108,
+// // //     borderRadius: 100,
+// // //     justifyContent: "center",
+// // //     alignItems: "center",
+// // //   },
+
+// // //   riskScore: {
+// // //     fontSize: 34,
+// // //     fontWeight: "900",
+// // //   },
+
+// // //   outOf: {
+// // //     marginTop: -5,
+// // //     fontSize: 11,
+// // //     color: "#9CA3AF",
+// // //   },
+
+// // //   riskBadge: {
+// // //     flexDirection: "row",
+// // //     alignItems: "center",
+// // //     paddingHorizontal: 14,
+// // //     paddingVertical: 8,
+// // //     borderRadius: 20,
+// // //     marginTop: -4,
+// // //   },
+
+// // //   riskSymbol: {
+// // //     fontSize: 17,
+// // //     fontWeight: "900",
+// // //   },
+
+// // //   riskBadgeText: {
+// // //     marginLeft: 6,
+// // //     fontSize: 13,
+// // //     fontWeight: "800",
+// // //   },
+
+// // //   riskMessage: {
+// // //     marginTop: 17,
+// // //     borderRadius: 13,
+// // //     padding: 12,
+// // //   },
+
+// // //   riskMessageTitle: {
+// // //     fontSize: 12,
+// // //     fontWeight: "800",
+// // //   },
+
+// // //   riskMessageText: {
+// // //     marginTop: 3,
+// // //     fontSize: 11,
+// // //     color: "#6B7280",
+// // //   },
+
+// // //   // ==============================
+// // //   // TABS SPACE
+// // //   // ==============================
+
+// // //   tabSpace: {
+// // //     height: 90,
+// // //   },
+// // // });
