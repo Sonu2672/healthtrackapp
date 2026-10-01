@@ -12,11 +12,11 @@ import {
   TextInput,
   View,
   useWindowDimensions,
+  ActivityIndicator
 } from "react-native";
 
 import { DEVICE_ID, BACKEND_URL } from "../constants/config";
 import { useHealth } from "../../context/HealthContext";
-
 const styles = StyleSheet.create({
   aiSparkle: { width: 34, height: 34, borderRadius: 10, backgroundColor: '#F3E8FF', alignItems: 'center', justifyContent: 'center' },
   aiSubtitle: { fontSize: 10, color: '#64748B', marginTop: 2 },
@@ -178,6 +178,7 @@ const styles = StyleSheet.create({
 
 export default function Demo() {
   const { width } = useWindowDimensions();
+const [loading, setLoading] = useState(false);
 
   const isDesktop = width >= 1024;
 
@@ -256,6 +257,9 @@ export default function Demo() {
     } catch (error) {
       console.log("Demo data error:", error);
     }
+    finally {
+    setLoading(false);
+  }
   };
 
   // ==========================================
@@ -574,21 +578,35 @@ if (risk === "High Risk" || risk === "Critical Risk") {
 
                 </View>
 
-                <Pressable
-                  style={styles.applyButton}
-                  onPress={demoDataHandler}
-                  
-                >
-                  <Ionicons
-                    name="play"
-                    size={17}
-                    color="#FFFFFF"
-                  />
+          <Pressable
+  style={styles.applyButton}
+  onPress={demoDataHandler}
+>
+  {loading ? (
+    <>
+      <ActivityIndicator
+        size="small"
+        color="#FFFFFF"
+      />
 
-                  <Text style={styles.applyText}>
-                    Apply Demo Data
-                  </Text>
-                </Pressable>
+      <Text style={styles.applyText}>
+        Analyzing...
+      </Text>
+    </>
+  ) : (
+    <>
+      <Ionicons
+        name="play"
+        size={17}
+        color="#FFFFFF"
+      />
+
+      <Text style={styles.applyText}>
+        Apply Demo Data
+      </Text>
+    </>
+  )}
+</Pressable>
               </>
             )}
           </View>
