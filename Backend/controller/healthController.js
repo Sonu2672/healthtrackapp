@@ -119,6 +119,9 @@ export const healthData = async (req, res) => {
       }
     );
 
+
+
+
     // ==================================================
     // ML RESPONSE CHECK
     // ==================================================
@@ -130,6 +133,13 @@ export const healthData = async (req, res) => {
     }
 
     const mlData = await mlResponse.json();
+    
+    console.log("🔥 ML STATUS:", mlResponse.status);
+console.log("🔥 ML RAW RESPONSE:", mlData);
+console.log("🔥 ML RISK:", {
+  riskScore: mlData.riskScore,
+  riskLevel: mlData.riskLevel,
+});
 
     console.log(
       "🤖 ML RESULT:",
@@ -158,6 +168,38 @@ export const healthData = async (req, res) => {
       "🧠 FINAL HEALTH PAYLOAD:",
       healthPayload
     );
+
+
+    // 🌍 AIR QUALITY ML
+const airQualityResponse = await fetch(
+  // "http://127.0.0.1:5001/air-quality",
+   "https://healthtrackapp2ml.onrender.com/air-quality",
+  {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+
+    // ONLY AIR QUALITY INPUTS
+    body: JSON.stringify({
+      dust: healthPayload.dust,
+      humidity: healthPayload.humidity,
+      envtemp: healthPayload.envtemp,
+    }),
+  }
+);
+
+const airQualityML = await airQualityResponse.json();
+
+
+// ONLY AIR QUALITY FIELDS
+healthPayload.airQualityLevel =
+  airQualityML.airQualityLevel || "Unknown";
+
+healthPayload.airQualityScore =
+  Number(airQualityML.airQualityScore) || 0;
+
+
 
     // ==================================================
     // SAVE TO MONGODB
@@ -229,6 +271,13 @@ export const healthData = async (req, res) => {
     });
   }
 };
+
+
+
+
+
+
+
 
 
 // ======================================================

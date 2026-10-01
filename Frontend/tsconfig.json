@@ -16,5 +16,5 @@
     "**/*.tsx",
     ".expo/types/**/*.ts",
     "expo-env.d.ts"
-  ]
+, "context/HealthContext.jsx", "src/services/socket.js", "src/app/(tabs)/profile.jsx", "src/app/(tabs)/index.jsx", "src/app/demo.jsx", "src/app/(tabs)/risk.jsx", "src/app/(tabs)/health.jsx", "src/app/(tabs)/environment.jsx", "src/app/(tabs)/disaster.jsx", "src/app/(tabs)/_layout.jsx", "src/app/_layout.jsx", "src/app/index.jsx"  ]
 }

@@ -55,6 +55,21 @@ const healthSchema = new mongoose.Schema(
       default: 0,
     },
 
+    riskLevel:{
+      type:String,
+      default:"Low"
+    },
+    
+    airQualityLevel: {
+  type: String,
+  default: "Unknown"
+},
+
+airQualityScore: {
+  type: Number,
+  default: 0
+},
+
 
 
   },

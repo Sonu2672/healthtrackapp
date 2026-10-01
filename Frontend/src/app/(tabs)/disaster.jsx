@@ -8,19 +8,7 @@ import {
   View,
 } from "react-native";
 
-type AlertLevel = "Critical" | "High" | "Medium" | "Low";
-
-type DisasterAlert = {
-  id: number;
-  title: string;
-  location: string;
-  time: string;
-  level: AlertLevel;
-  status: "Active" | "Monitoring";
-  icon: keyof typeof Ionicons.glyphMap;
-};
-
-const alerts: DisasterAlert[] = [
+const alerts = [
   {
     id: 1,
     title: "Ganga River Level Alert",
@@ -92,7 +80,7 @@ export default function Disaster() {
     );
   }, [selectedFilter]);
 
-  const getLevelColor = (level: AlertLevel) => {
+  const getLevelColor = (level) => {
     switch (level) {
       case "Critical":
         return {

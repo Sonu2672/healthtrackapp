@@ -4,7 +4,7 @@ import {
   Text,
   View,
 } from "react-native";
-
+import { useHealth } from "../../../context/HealthContext";
 export default function Profile() {
   return (
     <ScrollView
@@ -127,10 +127,6 @@ function Setting({
   icon,
   title,
   subtitle,
-}: {
-  icon: string;
-  title: string;
-  subtitle: string;
 }) {
   return (
     <View style={styles.setting}>

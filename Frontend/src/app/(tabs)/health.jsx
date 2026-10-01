@@ -14,6 +14,8 @@ import Svg, {
   Line,
 } from "react-native-svg";
 
+import { useHealth } from "../../../context/HealthContext";
+
 // ==================================================
 // DEMO TREND DATA
 // Later backend history se replace kar sakte ho
@@ -48,79 +50,81 @@ const trendData = {
 };
 
 // ==================================================
-// METRIC CONFIG
-// ==================================================
-
-const metrics = {
-  heartRate: {
-    title: "Heart Rate",
-    shortTitle: "Heart Rate",
-    icon: "♥",
-    value: "82",
-    unit: "BPM",
-    status: "Normal",
-    color: "#EF4444",
-    bg: "#FEE2E2",
-    data: trendData.heartRate,
-    min: 60,
-    max: 100,
-  },
-
-  spo2: {
-    title: "SpO₂",
-    shortTitle: "SpO₂",
-    icon: "◉",
-    value: "98",
-    unit: "%",
-    status: "Normal",
-    color: "#2563EB",
-    bg: "#DBEAFE",
-    data: trendData.spo2,
-    min: 95,
-    max: 100,
-  },
-
-  temperature: {
-    title: "Body Temperature",
-    shortTitle: "Temperature",
-    icon: "♨",
-    value: "36.7",
-    unit: "°C",
-    status: "Normal",
-    color: "#F97316",
-    bg: "#FFEDD5",
-    data: trendData.temperature,
-    min: 36,
-    max: 38,
-  },
-
-  ecg: {
-    title: "ECG Signal",
-    shortTitle: "ECG",
-    icon: "〰",
-    value: "Normal",
-    unit: "",
-    status: "Monitoring",
-    color: "#7C3AED",
-    bg: "#EDE9FE",
-    data: trendData.ecg,
-    min: 40,
-    max: 60,
-  },
-};
-
-type MetricKey = keyof typeof metrics;
-
-// ==================================================
 // HEALTH SCREEN
 // ==================================================
 
 export default function Health() {
-  const [selectedMetric, setSelectedMetric] =
-    useState<MetricKey>("heartRate");
 
-  const selected =
-    metrics[selectedMetric];
+  // IMPORTANT:
+  // useHealth() component ke ANDAR hona chahiye
+  const { health, connected } = useHealth();
+
+  const [selectedMetric, setSelectedMetric] =
+    useState("heartRate");
+
+  // ==================================================
+  // METRIC CONFIG
+  // ==================================================
+
+  const metrics = {
+    heartRate: {
+      title: "Heart Rate",
+      shortTitle: "Heart Rate",
+      icon: "♥",
+      value: health?.heartRate ?? 0,
+      unit: "BPM",
+      status: "Normal",
+      color: "#EF4444",
+      bg: "#FEE2E2",
+      data: trendData.heartRate,
+      min: 60,
+      max: 100,
+    },
+
+    spo2: {
+      title: "SpO₂",
+      shortTitle: "SpO₂",
+      icon: "◉",
+      value: health?.spo2 ?? 0,
+      unit: "%",
+      status: "Normal",
+      color: "#2563EB",
+      bg: "#DBEAFE",
+      data: trendData.spo2,
+      min: 95,
+      max: 100,
+    },
+
+    temperature: {
+      title: "Body Temperature",
+      shortTitle: "Temperature",
+      icon: "♨",
+      value: health?.temp ?? 0,
+      unit: "°C",
+      status: "Normal",
+      color: "#F97316",
+      bg: "#FFEDD5",
+      data: trendData.temperature,
+      min: 36,
+      max: 38,
+    },
+
+    ecg: {
+      title: "ECG Signal",
+      shortTitle: "ECG",
+      icon: "〰",
+      value: "Normal",
+      unit: "",
+      status: "Monitoring",
+      color: "#7C3AED",
+      bg: "#EDE9FE",
+      data: trendData.ecg,
+      min: 40,
+      max: 60,
+    },
+  };
+
+  const selected = metrics[selectedMetric];
 
   return (
     <ScrollView
@@ -149,8 +153,10 @@ export default function Health() {
       </Text>
 
       <View style={styles.grid}>
+
         <VitalCard
           metric="heartRate"
+          item={metrics.heartRate}
           selected={selectedMetric === "heartRate"}
           onPress={() =>
             setSelectedMetric("heartRate")
@@ -159,6 +165,7 @@ export default function Health() {
 
         <VitalCard
           metric="spo2"
+          item={metrics.spo2}
           selected={selectedMetric === "spo2"}
           onPress={() =>
             setSelectedMetric("spo2")
@@ -167,6 +174,7 @@ export default function Health() {
 
         <VitalCard
           metric="temperature"
+          item={metrics.temperature}
           selected={
             selectedMetric === "temperature"
           }
@@ -177,11 +185,13 @@ export default function Health() {
 
         <VitalCard
           metric="ecg"
+          item={metrics.ecg}
           selected={selectedMetric === "ecg"}
           onPress={() =>
             setSelectedMetric("ecg")
           }
         />
+
       </View>
 
       {/* ==========================================
@@ -189,11 +199,13 @@ export default function Health() {
       ========================================== */}
 
       <View style={styles.card}>
+
         <View style={styles.cardHeader}>
+
           <View>
-            <View
-              style={styles.trendTitleRow}
-            >
+
+            <View style={styles.trendTitleRow}>
+
               <View
                 style={[
                   styles.trendIcon,
@@ -217,6 +229,7 @@ export default function Health() {
               </View>
 
               <View>
+
                 <Text
                   style={styles.cardTitle}
                 >
@@ -228,8 +241,11 @@ export default function Health() {
                 >
                   Live health monitoring
                 </Text>
+
               </View>
+
             </View>
+
           </View>
 
           <View
@@ -241,6 +257,7 @@ export default function Health() {
               },
             ]}
           >
+
             <View
               style={[
                 styles.liveDot,
@@ -262,23 +279,28 @@ export default function Health() {
             >
               LIVE
             </Text>
+
           </View>
+
         </View>
 
         {/* CHART */}
 
         <View style={styles.chartContainer}>
+
           <SmoothChart
             data={selected.data}
             color={selected.color}
             min={selected.min}
             max={selected.max}
           />
+
         </View>
 
         {/* CHART BOTTOM */}
 
         <View style={styles.chartFooter}>
+
           <Text style={styles.timeLabel}>
             8:00 AM
           </Text>
@@ -294,6 +316,7 @@ export default function Health() {
           <Text style={styles.timeLabel}>
             Now
           </Text>
+
         </View>
 
         {/* CURRENT VALUE */}
@@ -307,7 +330,9 @@ export default function Health() {
             },
           ]}
         >
+
           <View>
+
             <Text
               style={styles.readingLabel}
             >
@@ -324,15 +349,19 @@ export default function Health() {
               ]}
             >
               {selected.value}{" "}
+
               <Text
                 style={styles.readingUnit}
               >
                 {selected.unit}
               </Text>
+
             </Text>
+
           </View>
 
           <View>
+
             <Text style={styles.readingLabel}>
               Status
             </Text>
@@ -348,8 +377,11 @@ export default function Health() {
             >
               ● {selected.status}
             </Text>
+
           </View>
+
         </View>
+
       </View>
 
       {/* ==========================================
@@ -361,8 +393,10 @@ export default function Health() {
       </Text>
 
       <View style={styles.selectorCard}>
+
         <TrendSelector
           metric="heartRate"
+          item={metrics.heartRate}
           selected={selectedMetric}
           onPress={() =>
             setSelectedMetric("heartRate")
@@ -371,6 +405,7 @@ export default function Health() {
 
         <TrendSelector
           metric="spo2"
+          item={metrics.spo2}
           selected={selectedMetric}
           onPress={() =>
             setSelectedMetric("spo2")
@@ -379,6 +414,7 @@ export default function Health() {
 
         <TrendSelector
           metric="temperature"
+          item={metrics.temperature}
           selected={selectedMetric}
           onPress={() =>
             setSelectedMetric("temperature")
@@ -387,11 +423,13 @@ export default function Health() {
 
         <TrendSelector
           metric="ecg"
+          item={metrics.ecg}
           selected={selectedMetric}
           onPress={() =>
             setSelectedMetric("ecg")
           }
         />
+
       </View>
 
       {/* ==========================================
@@ -403,6 +441,7 @@ export default function Health() {
       </Text>
 
       <View style={styles.summaryCard}>
+
         <SummaryItem
           title="Lowest"
           value={
@@ -410,8 +449,7 @@ export default function Health() {
               ? "72 BPM"
               : selectedMetric === "spo2"
               ? "97%"
-              : selectedMetric ===
-                "temperature"
+              : selectedMetric === "temperature"
               ? "36.5°C"
               : "48"
           }
@@ -424,8 +462,7 @@ export default function Health() {
               ? "80 BPM"
               : selectedMetric === "spo2"
               ? "98%"
-              : selectedMetric ===
-                "temperature"
+              : selectedMetric === "temperature"
               ? "36.7°C"
               : "53"
           }
@@ -438,12 +475,12 @@ export default function Health() {
               ? "91 BPM"
               : selectedMetric === "spo2"
               ? "99%"
-              : selectedMetric ===
-                "temperature"
+              : selectedMetric === "temperature"
               ? "36.9°C"
               : "58"
           }
         />
+
       </View>
 
       {/* ==========================================
@@ -451,6 +488,7 @@ export default function Health() {
       ========================================== */}
 
       <View style={styles.card}>
+
         <Text style={styles.cardTitle}>
           Recent Records
         </Text>
@@ -482,9 +520,11 @@ export default function Health() {
           spo2="98"
           temp="36.7"
         />
+
       </View>
 
       <View style={{ height: 90 }} />
+
     </ScrollView>
   );
 }
@@ -494,16 +534,10 @@ export default function Health() {
 // ==================================================
 
 function VitalCard({
-  metric,
+  item,
   selected,
   onPress,
-}: {
-  metric: MetricKey;
-  selected: boolean;
-  onPress: () => void;
 }) {
-  const item = metrics[metric];
-
   return (
     <Pressable
       onPress={onPress}
@@ -516,6 +550,7 @@ function VitalCard({
         },
       ]}
     >
+
       <View
         style={[
           styles.vitalIconBox,
@@ -525,6 +560,7 @@ function VitalCard({
           },
         ]}
       >
+
         <Text
           style={[
             styles.vitalIcon,
@@ -535,6 +571,7 @@ function VitalCard({
         >
           {item.icon}
         </Text>
+
       </View>
 
       <Text style={styles.vitalTitle}>
@@ -542,6 +579,7 @@ function VitalCard({
       </Text>
 
       <View style={styles.valueRow}>
+
         <Text style={styles.vitalValue}>
           {item.value}
         </Text>
@@ -549,6 +587,7 @@ function VitalCard({
         <Text style={styles.unit}>
           {item.unit}
         </Text>
+
       </View>
 
       <Text
@@ -561,6 +600,7 @@ function VitalCard({
       >
         ● {item.status}
       </Text>
+
     </Pressable>
   );
 }
@@ -571,16 +611,11 @@ function VitalCard({
 
 function TrendSelector({
   metric,
+  item,
   selected,
   onPress,
-}: {
-  metric: MetricKey;
-  selected: MetricKey;
-  onPress: () => void;
 }) {
-  const item = metrics[metric];
-  const isSelected =
-    selected === metric;
+  const isSelected = selected === metric;
 
   return (
     <Pressable
@@ -593,6 +628,7 @@ function TrendSelector({
         },
       ]}
     >
+
       <View
         style={[
           styles.selectorIcon,
@@ -604,6 +640,7 @@ function TrendSelector({
           },
         ]}
       >
+
         <Text
           style={[
             styles.selectorIconText,
@@ -614,9 +651,11 @@ function TrendSelector({
         >
           {item.icon}
         </Text>
+
       </View>
 
       <View style={styles.selectorText}>
+
         <Text
           style={[
             styles.selectorTitle,
@@ -631,6 +670,7 @@ function TrendSelector({
         <Text style={styles.selectorValue}>
           {item.value} {item.unit}
         </Text>
+
       </View>
 
       {isSelected && (
@@ -645,6 +685,7 @@ function TrendSelector({
           ✓
         </Text>
       )}
+
     </Pressable>
   );
 }
@@ -658,11 +699,6 @@ function SmoothChart({
   color,
   min,
   max,
-}: {
-  data: number[];
-  color: string;
-  min: number;
-  max: number;
 }) {
   const width = 320;
   const height = 160;
@@ -678,6 +714,7 @@ function SmoothChart({
 
   const points = data.map(
     (value, index) => {
+
       const x =
         paddingX +
         (index /
@@ -700,20 +737,25 @@ function SmoothChart({
 
   let path = "";
 
-  points.forEach((point, index) => {
-    if (index === 0) {
-      path = `M ${point.x} ${point.y}`;
-      return;
+  points.forEach(
+    (point, index) => {
+
+      if (index === 0) {
+        path =
+          `M ${point.x} ${point.y}`;
+        return;
+      }
+
+      const previous =
+        points[index - 1];
+
+      const controlX =
+        (previous.x + point.x) / 2;
+
+      path +=
+        ` C ${controlX} ${previous.y}, ${controlX} ${point.y}, ${point.x} ${point.y}`;
     }
-
-    const previous =
-      points[index - 1];
-
-    const controlX =
-      (previous.x + point.x) / 2;
-
-    path += ` C ${controlX} ${previous.y}, ${controlX} ${point.y}, ${point.x} ${point.y}`;
-  });
+  );
 
   const lastPoint =
     points[points.length - 1];
@@ -724,7 +766,6 @@ function SmoothChart({
       height={height}
       viewBox={`0 0 ${width} ${height}`}
     >
-      {/* GRID */}
 
       <Line
         x1="8"
@@ -756,8 +797,6 @@ function SmoothChart({
         strokeDasharray="4 5"
       />
 
-      {/* SMOOTH CURVE */}
-
       <Path
         d={path}
         fill="none"
@@ -766,8 +805,6 @@ function SmoothChart({
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-
-      {/* LAST POINT */}
 
       <Circle
         cx={lastPoint.x}
@@ -784,6 +821,7 @@ function SmoothChart({
         r="2.5"
         fill={color}
       />
+
     </Svg>
   );
 }
@@ -795,12 +833,10 @@ function SmoothChart({
 function SummaryItem({
   title,
   value,
-}: {
-  title: string;
-  value: string;
 }) {
   return (
     <View style={styles.summaryItem}>
+
       <Text style={styles.summaryTitle}>
         {title}
       </Text>
@@ -808,6 +844,7 @@ function SummaryItem({
       <Text style={styles.summaryValue}>
         {value}
       </Text>
+
     </View>
   );
 }
@@ -821,19 +858,16 @@ function Record({
   hr,
   spo2,
   temp,
-}: {
-  time: string;
-  hr: string;
-  spo2: string;
-  temp: string;
 }) {
   return (
     <View style={styles.record}>
+
       <Text style={styles.recordTime}>
         {time}
       </Text>
 
       <View style={styles.recordValue}>
+
         <Text style={styles.recordNumber}>
           {hr}
         </Text>
@@ -841,9 +875,11 @@ function Record({
         <Text style={styles.recordUnit}>
           BPM
         </Text>
+
       </View>
 
       <View style={styles.recordValue}>
+
         <Text style={styles.recordNumber}>
           {spo2}
         </Text>
@@ -851,9 +887,11 @@ function Record({
         <Text style={styles.recordUnit}>
           %
         </Text>
+
       </View>
 
       <View style={styles.recordValue}>
+
         <Text style={styles.recordNumber}>
           {temp}
         </Text>
@@ -861,7 +899,9 @@ function Record({
         <Text style={styles.recordUnit}>
           °C
         </Text>
+
       </View>
+
     </View>
   );
 }
@@ -871,6 +911,7 @@ function Record({
 // ==================================================
 
 const styles = StyleSheet.create({
+
   container: {
     flex: 1,
     backgroundColor: "#F7F9FC",
@@ -907,10 +948,6 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     marginBottom: 15,
   },
-
-  // ==========================================
-  // VITAL CARD
-  // ==========================================
 
   vitalCard: {
     width: "48%",
@@ -964,10 +1001,6 @@ const styles = StyleSheet.create({
     marginTop: 8,
     fontWeight: "700",
   },
-
-  // ==========================================
-  // CARD
-  // ==========================================
 
   card: {
     backgroundColor: "#FFFFFF",
@@ -1033,10 +1066,6 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
 
-  // ==========================================
-  // CHART
-  // ==========================================
-
   chartContainer: {
     height: 160,
     marginTop: 20,
@@ -1087,10 +1116,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "800",
   },
-
-  // ==========================================
-  // SELECTOR
-  // ==========================================
 
   selectorCard: {
     backgroundColor: "#FFFFFF",
@@ -1146,10 +1171,6 @@ const styles = StyleSheet.create({
     marginRight: 5,
   },
 
-  // ==========================================
-  // SUMMARY
-  // ==========================================
-
   summaryCard: {
     backgroundColor: "#FFFFFF",
     borderRadius: 18,
@@ -1175,10 +1196,6 @@ const styles = StyleSheet.create({
     color: "#111827",
     marginTop: 5,
   },
-
-  // ==========================================
-  // RECORD
-  // ==========================================
 
   record: {
     flexDirection: "row",
@@ -1213,4 +1230,5 @@ const styles = StyleSheet.create({
     marginLeft: 2,
     marginTop: 3,
   },
+
 });

@@ -155,43 +155,43 @@ const menuItems = [
   {
     name: "index",
     title: "Home",
-    icon: "home-outline" as const,
-    activeIcon: "home" as const,
+    icon: "home-outline",
+    activeIcon: "home",
     color: "#2563EB",
   },
   {
     name: "health",
     title: "Health",
-    icon: "heart-outline" as const,
-    activeIcon: "heart" as const,
+    icon: "heart-outline",
+    activeIcon: "heart",
     color: "#EF4444",
   },
   {
     name: "risk",
     title: "AI Risk",
-    icon: "analytics-outline" as const,
-    activeIcon: "analytics" as const,
+    icon: "analytics-outline",
+    activeIcon: "analytics",
     color: "#8B5CF6",
   },
   {
     name: "disaster",
     title: "Disaster",
-    icon: "warning-outline" as const,
-    activeIcon: "warning" as const,
+    icon: "warning-outline",
+    activeIcon: "warning",
     color: "#F97316",
   },
   {
     name: "environment",
     title: "Environment",
-    icon: "leaf-outline" as const,
-    activeIcon: "leaf" as const,
+    icon: "leaf-outline",
+    activeIcon: "leaf",
     color: "#16A34A",
   },
   {
     name: "profile",
     title: "Profile",
-    icon: "person-outline" as const,
-    activeIcon: "person" as const,
+    icon: "person-outline",
+    activeIcon: "person",
     color: "#111827",
   },
 ];
@@ -229,7 +229,7 @@ function DesktopSidebar() {
                 if (item.name === "index") {
                   router.push("/");
                 } else {
-                  router.push(`/(tabs)/${item.name}` as any);
+                  router.push(`/(tabs)/${item.name}` );
                 }
               }}
               style={[
@@ -304,7 +304,7 @@ export default function TabsLayout() {
 
                   left: 14,
                   right: 14,
-                  bottom: 20,
+                  bottom: 37,
 
                   height: 64,
 
